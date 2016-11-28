@@ -1,0 +1,438 @@
+<html>
+
+<head>
+	<meta http-equiv="content-type" content="text/html;charset=utf-8" />
+	<script src="http://libs.baidu.com/jquery/2.1.4/jquery.min.js"></script>
+</head>
+
+<body>
+	<div>
+		<input type="file" id="image-input" />
+		<button type="button" onclick="load()">加载</button>
+		<button type="button" onclick="analyse()">分析</button>
+	</div>
+	<div style="position:relative">
+		<canvas id="topcanvas" style="position:absolute;top:0;left:0"></canvas>
+		<canvas id="mycanvas" style="position:absolute;top:0;left:0;border:1px #ccc dotted"></canvas>
+
+	</div>
+	<script>
+        var map = [];
+
+        function getPointRGB(imagedata, x, y) {
+            if (x >= imagedata.width) {
+                return "out of range";
+            }
+            if (y >= imagedata.height) {
+                return "out of range";
+            }
+            var offset = (y * imagedata.width + x) * 4,
+                data = imagedata.data;
+            return {
+                R: data[offset++],
+                G: data[offset++],
+                B: data[offset++]
+            };
+
+        }
+
+        function distRGB(RGB1, RGB2) {
+            var dr = RGB1['R'] - RGB2['R'],
+                dg = RGB1['G'] - RGB2['G'],
+                db = RGB1['B'] - RGB2['B'];
+            return Math.sqrt(dr * dr + dg * dg + db * db);
+
+        }
+
+        function load() {
+            var file = document.getElementById("image-input"),
+                img = new Image();
+            if (file.files.length) {
+                img.onload = function() {
+                    var canvas = document.getElementById("mycanvas"),
+                        ctx = canvas.getContext('2d');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0, img.width, img.height);
+                    map = new Array(img.width, img.height);
+                    for (i = 0; i < img.width * img.height; i++) {
+                        map[i] = 0;
+                    }
+
+                }
+                img.src = URL.createObjectURL(file.files[0]);
+            }
+        }
+
+        function analyse() {
+            var canvas = document.getElementById("mycanvas"),
+                w = canvas.width,
+                h = canvas.height
+            ctx = canvas.getContext('2d');
+            /*			var topCanvas = document.getElementById("topcanvas");
+            			topCanvas.width =w;
+            			topCanvas.height=h;
+            			var ctx2 = topCanvas.getContext('2d');*/
+            var bitmap = ctx.getImageData(0, 0, w, h);
+            //			var map = new Array(w * h);
+
+            var newBitmap;
+            var group = 0,
+                currentGroup;
+            $('#mycanvas').mousemove(function(e) {
+                var oX = e.offsetX,
+                    oY = e.offsetY;
+                if ((map[oX + oY * w] === 0)) {
+                    group++;
+                    currentGroup = group;
+                    map[oX + oY * w] = group;
+                    ctx.putImageData(bitmap, 0, 0);
+                    newBitmap = ctx.getImageData(0, 0, w, h);
+                    newBitmap.data[(oX + oY * w) * 4] = 0;
+                    newBitmap.data[(oX + oY * w) * 4 + 1] = 0;
+                    newBitmap.data[(oX + oY * w) * 4 + 2] = 0;
+                    newBitmap.data[(oX + oY * w) * 4 + 3] = 0x80;
+                    var relatedPoints = [oX, oY];
+                    var direction = {
+                        up: [0, -1],
+                        down: [0, 1],
+                        left: [-1, 0],
+                        right: [1, 0]
+                    };
+                    var oRGB = getPointRGB(bitmap, oX, oY);
+                    for (i = 0, len = 2; i < len;) {
+                        var x = relatedPoints[i++],
+                            y = relatedPoints[i++];
+                        for (j in direction) {
+                            var nX = x + direction[j][0],
+                                nY = y + direction[j][1];
+                            if ((nX < 0) || (nX >= w) || (nY < 0) || (nY >= h)) {
+                                continue;
+                            };
+                            var RGB = getPointRGB(bitmap, nX, nY);
+                            if ((!map[nX + nY * w]) && (distRGB(RGB, oRGB) < 60)) {
+                                relatedPoints.push(nX);
+                                relatedPoints.push(nY);
+                                map[nX + nY * w] = group;
+                                len += 2;
+                                newBitmap.data[(nY * w + nX) * 4] = 0x80;
+                                newBitmap.data[(nY * w + nX) * 4 + 1] = 0;
+                                newBitmap.data[(nY * w + nX) * 4 + 2] = 0;
+                                newBitmap.data[(nY * w + nX) * 4 + 3] = 0x80;
+                            }
+
+                        }
+                    }
+                    ctx.putImageData(newBitmap, 0, 0);
+                } else if ((map[oX + oY * w] != currentGroup)) {
+                    currentGroup = map[oX + oY * w];
+                    ctx.putImageData(bitmap, 0, 0);
+                    newBitmap = ctx.getImageData(0, 0, w, h);
+                    for (x = 0; x < w; x++) {
+                        for (y = 0; y < h; y++) {
+                            if (map[x + y * w] === currentGroup) {
+                                newBitmap.data[(x + y * w) * 4] = 0x80;
+                                newBitmap.data[(x + y * w) * 4 + 1] = 0;
+                                newBitmap.data[(x + y * w) * 4 + 2] = 0;
+                                newBitmap.data[(x + y * w) * 4 + 3] = 0x80;
+                            }
+                        }
+                    }
+                    ctx.putImageData(newBitmap, 0, 0);
+                }
+
+            });
+
+            $('#mycanvas').mousedown(function(e) {
+                $('#mycanvas').unbind();
+                ctx.putImageData(bitmap, 0, 0);
+                if (e.button != 0) {
+                    return;
+                }
+
+                var oX = e.offsetX,
+                    oY = e.offsetY;
+                var oRGB = getPointRGB(bitmap, oX, oY);
+                var selectGroup = map[oX + oY * w];
+                var edge = [];
+                var minX = w,
+                    minY = h,
+                    maxX = 0,
+                    maxY = 0;
+                //get Edge of selected area
+
+                for (x = 0; x < w; x++) {
+                    for (y = 0; y < h; y++) {
+                        if ((map[x + y * w] === selectGroup) && !((map[x + y * w - 1] === selectGroup) && (map[x + y * w + 1] === selectGroup) && (map[x + y * w - w] === selectGroup) && (map[x + y * w + w] === selectGroup))) {
+                            edge.push({
+                                x: x,
+                                y: y
+                            });
+                            if (x < minX) minX = x;
+                            if (y < minY) minY = y;
+                            if (x > maxX) maxX = x;
+                            if (y > maxY) maxY = y;
+                        }
+                    }
+                }
+                var centerX = Math.round((maxX - minX) / 2 + minX),
+                    centerY = Math.round((maxY - minY) / 2 + minY);
+               //sort by min to max style
+                edge.sort(function(a, b) {
+                    return (a.x === b.x) ? a.y - b.y : a.x - b.x
+                });
+
+                var houghSpace = new Array(180);
+                for (j = 0; j < 180; j++) {
+                    houghSpace[j] = [];
+                    for (i = 0; i < edge.length; i++) {
+                        var phi = ((edge[i].x - centerX) * Math.cos(j * Math.PI / 180) + (edge[i].y - centerY) * Math.sin(j * Math.PI / 180)); //向量在线法向单位方向向量的投影值，算出中心点到直线的距离
+                        for (k = 0; k < houghSpace[j].length; k++) {
+                            if (Math.abs(houghSpace[j][k].phi - phi) < 0.5) { //todo:如何抹平计算的误差，需要进行调整
+                                houghSpace[j][k].phi = (houghSpace[j][k].phi * houghSpace[j][k].points.length + phi) / (houghSpace[j][k].points.length + 1);//r 值平均化处理
+                                houghSpace[j][k].points.push(edge[i]);
+
+                                break;
+                            }
+                        }
+                        if (k === houghSpace[j].length) {
+                            houghSpace[j].push({
+                                phi: phi,
+                                theta: j,
+                                points: [edge[i]]
+                            });
+                        }
+                    }
+                }
+
+                var lines = [];
+                var minLength = 4;
+                for (j = 0; j < 180; j++) {  //角度循环
+
+                    houghSpace[j].sort(function(a, b) {
+                        return b.points.length - a.points.length   //根据个数排序
+                    })
+                    for (k = 0; k < houghSpace[j].length; k++) {  //不同r值的扫描线段
+                        if (houghSpace[j][k].points.length >= minLength) { //todo:最小尺寸需要调整
+                            var pointCount = 0,
+                                startPoint = 0;
+                            for (i = 1; i < houghSpace[j][k].points.length; i++) { //同一个r值的不同像素点
+                                var lastPoint = houghSpace[j][k].points[i - 1];
+                                var currentPoint = houghSpace[j][k].points[i];
+                                if ((Math.abs(currentPoint.x - lastPoint.x) <= 2) && (Math.abs(currentPoint.y - lastPoint.y) <= 2)) {
+                                    pointCount++;
+                                } else {
+                                    if (pointCount >= minLength) {
+                                        lines.push({
+                                            start: houghSpace[j][k].points[startPoint],
+                                            end: houghSpace[j][k].points[i - 1],
+                                            theta: houghSpace[j][k].theta,
+                                            phi: houghSpace[j][k].phi,
+                                            points: houghSpace[j][k].points.slice(startPoint, i - 1)
+                                        });
+
+                                    }
+                                    pointCount = 0;
+                                    startPoint = i;
+                                }
+                            }
+                            if (pointCount >= minLength) {
+                                lines.push({
+                                    start: houghSpace[j][k].points[startPoint],
+                                    end: houghSpace[j][k].points[i - 1],
+                                    theta: houghSpace[j][k].theta,
+                                    phi: houghSpace[j][k].phi,
+                                    points: houghSpace[j][k].points.slice(startPoint, i - 1)
+                                });
+                            }
+
+                            //							console.log(j, houghSpace[j][k].phi);
+                        }
+                    }
+                }
+
+                
+                lines.sort(function(a, b) {
+                    if (Math.abs(b.points.length - a.points.length) > 1) {
+                        return b.points.length - a.points.length;
+                    } else {
+                        f1 = (a.theta === 90) || (a.theta === 0) ? 1 : 0;
+                        f2 = (b.theta === 90) || (b.theta === 0) ? 1 : 0;
+                        return f2 - f1;
+
+                    }
+                });
+
+                //合并重叠的线段
+                for (i = 0; i < lines.length - 1; i++) {
+                    for (j = i + 1; j < lines.length; j++) {
+                        if ((Math.abs(lines[i].theta - lines[j].theta) > 20) && (Math.abs(lines[i].theta + 180 - lines[j].theta) > 20)) {
+                            continue;
+                        } //误差30度
+                        var dup = 0;
+                        for (k = 0; k < lines[j].points.length; k++) {
+                            p = lines[j].points[k];
+                            for (l = 0; l < lines[i].points.length; l++) {
+                                if ((lines[i].points[l].x === p.x) && (lines[i].points[l].y === p.y)) {
+                                    dup++;
+                                    break;
+                                }
+                            }
+                            if (dup >= 3) {
+                                break;
+                            }
+                        }
+                        if (dup >= 3) {
+                            lines.splice(j--, 1);
+                        }
+                    }
+                }
+                //将线段延伸
+                for (i = 0; i < lines.length - 1; i++) {
+                    var dx = Math.sin(lines[i].theta * Math.PI / 180),        //dx总是正直
+                        dy = Math.cos(lines[i].theta * Math.PI / 180);       //线方向上的单位向量
+                    var d = 1,
+                        f = 1;
+                    var x1 = lines[i].start.x + dx,
+                        y1 = lines[i].start.y + dy,
+                        x2, y2;
+                     /*
+                    if (((x1 >= lines[i].start.x) && (x1 <= lines[i].start.y) && (y1 >= lines[i].start.y) && (y1 <= lines[i].start.x)) ||
+                        ((x1 <= lines[i].start.x) && (x1 >= lines[i].start.y) && (y1 <= lines[i].start.y) && (y1 >= lines[i].start.x))) {
+                        f = -1;
+                    }
+                    */
+                   if (y1 <= lines[i].start.y) {
+                        f = -1;
+                    }
+                    var loop = false;
+                    do {
+                        loop = false;
+                        x1 = lines[i].start.x + dx * d * f;
+                        y1 = lines[i].start.y + dy * d * f;
+                        x2 = lines[i].end.x - dx * d * f;
+                        y2 = lines[i].end.y - dy * d * f;
+                        if (map[x1 + y1 * w] === selectGroup) {
+                            lines[i].points.unshift({
+                                x: x1,
+                                y: y1
+                            });
+                            loop = true;
+                        }
+                        if (map[x2 + y2 * w] === selectGroup) {
+                            lines[i].points.push({
+                                x: x2,
+                                y: y2
+                            });
+                            loop = true;
+                        }
+                        d++;
+                    } while (loop);
+                    lines[i].start = lines[i].points[0];
+                    lines[i].end = lines[i].points[lines[i].points.length - 1];
+                }
+                //				newBitmap = ctx.getImageData(0,0,w,h);//测试代码*/
+
+
+                //挑选线段组成墙
+                var areaW = maxX - minX + 1;
+                var areaMap = new Array((maxX - minX + 1) * (maxY - minY + 1));
+                var pointCount = 0;
+                for (x = minX; x <= maxX; x++) {
+                    for (y = minY; y <= maxY; y++) {
+                        areaMap[x - minX + (y - minY) * areaW] = (map[x + y * w] === selectGroup) ? (pointCount++, 1) : 0;
+                    }
+                }
+                for (i = 0; i < lines.length; i++) {
+                    var dx = Math.cos(lines[i].theta * Math.PI / 180),  //线条法向
+                        dy = Math.sin(lines[i].theta * Math.PI / 180);
+                    var f = 1,
+                        d = 0;
+                    var x = Math.round(lines[i].start.x + dx),
+                        y = Math.round(lines[i].start.y + dy);
+                    if ((x < minX) || (x > maxX) || (y < minY) || (y > maxY)) {
+                        f = -1;
+                    }
+                    if (areaMap[(x - minX) + (y - minY) * areaW] === 0) {
+                        f = -1;
+                    }
+                    var loop = true;
+                    do {
+                        var c1 = 0,
+                            c2 = 0;
+                        for (j = 0; j < lines[i].points.length; j++) {
+                            x = Math.round(lines[i].points[j].x + dx * f * d);
+                            y = Math.round(lines[i].points[j].y + dy * f * d);
+                            if (areaMap[(x - minX) + (y - minY) * areaW] === 0) {
+                                if (++c1 >= 3) {
+                                    loop = false;
+                                    break;
+                                }
+                            } else if (areaMap[(x - minX) + (y - minY) * areaW] === 2) {
+                                c2++;
+                            } else {
+                                areaMap[(x - minX) + (y - minY) * areaW] = 2;
+                            }
+                        }
+                        if (c2 / lines[i].points.length > 0.8) {
+                            loop = false;
+                        }
+                    } while (loop && (d++ < 100));
+
+                    if (d > 1) {
+                        var wall = {
+                            type: 'wall',
+                            width: d,
+                            start: {
+                                x: lines[i].start.x + d / 2 * dx * f,
+                                y: lines[i].start.y + d / 2 * dy * f
+                            },
+                            end: {
+                                x: lines[i].end.x + d / 2 * dx * f,
+                                y: lines[i].end.y + d / 2 * dy * f
+                            },
+                        }
+                        console.log(" found wall :",wall);
+                    }
+                    /*					if (d >1){
+
+                    						console.log(i,lines[i].theta, lines[i].phi, lines[i].points.length,lines[i].start, lines[i].end, d);
+                    						for ( x = minX; x<=maxX; x++){
+                    							for (y = minY; y <=maxY; y++){
+                    								if (areaMap[x-minX + (y -minY) * areaW] === 2){
+                    									newBitmap.data[(x+y*w)*4] = 0x255;
+                    								}
+                    							}
+                    						}
+                    						ctx.putImageData(newBitmap,0,0);
+                    						alert(1);
+                    					}*/
+                }
+
+                //测试代码
+                for (i = 0; i < lines.length; i++) {
+                    console.log(i, lines[i].theta, lines[i].phi, lines[i].points.length, lines[i].start, lines[i].end);
+                    for (j = 0; j < lines[i].points.length; j++) {
+                        if ((lines[i].theta != 90) && (lines[i].theta != 0)) {
+                            newBitmap.data[(lines[i].points[j].x + lines[i].points[j].y * w) * 4] = 0x255;
+                        } else {
+                            newBitmap.data[(lines[i].points[j].x + lines[i].points[j].y * w) * 4 + 1] = 0x255;
+                        }
+
+                    }
+                    ctx.putImageData(newBitmap, 0, 0);
+                }
+
+
+
+                /*				newBitmap = ctx.getImageData(0,0,w,h);
+                				for (i=0; i< edge.length; i++){
+                					newBitmap.data[(edge[i].x+edge[i].y*w)*4] = 0x80; 
+                				}
+                				ctx.putImageData(newBitmap,0,0);*/
+
+            });
+        }
+
+    </script>
+</body>
