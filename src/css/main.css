@@ -1,0 +1,11 @@
+.Dog3D{
+    width: 100%;
+    height: 6000px;
+    position:absolute;
+    background-repeat: repeat;
+    background-image: url(../img/background.jpg);
+}
+.Dog3D-head{
+    width: 1036px;
+    height: 6000px;
+}
